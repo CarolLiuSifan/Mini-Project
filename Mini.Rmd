@@ -1,0 +1,13 @@
+---
+title: "Mini-Porject 3"
+author: "Liu Sifan"
+date: "11/20/2017"
+output: html_document
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+library(mdsr)
+library(RMySQL)
+library(tidyverse)
+db <- dbConnect_scidb(dbname = "imdb")
+```
