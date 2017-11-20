@@ -1,54 +1,172 @@
 ---
 title: "Mini-Porject 3"
-author: "Liu Sifan"
+author: "Liu Sifan","Rebecca Wang","Ziheng Ru"
 date: "11/20/2017"
 output: html_document
 ---
 
-```{r,echo=FALSE, message=FALSE, warning=FALSE}
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
 library(mdsr)
 library(RMySQL)
 library(tidyverse)
 db <- dbConnect_scidb(dbname = "imdb")
 ```
 
-```{r}
-movie_genre <- db %>%
-  dbGetQuery("SELECT  DISTINCT t.id, t.title, t.production_year,  mi.info_type_id, t. kind_id, mi.info
-FROM movie_info mi
-JOIN title t ON mi.movie_id = t.id
-WHERE mi. info_type_id = 3
-AND kind_id = 1")
-```
+**We try to figure out how does genre multiplicity change over time and what are the factors contribute to genre multiplicity.**
 
-```{r}
+**Hypothesis: The general trend of genre complexity increases over time. However, there will be ups and downs that are influenced by external factors like the Great Depression or the invention of the television.**
+
+We focus on Post-1920 era of movie, as it’s the modern era of movie. 
+
+```{r, message = FALSE, warning = FALSE}
+# Database Querying using SQL to get movies and their genres worldwide
 sum_movie <- db %>%
-  dbGetQuery("SELECT   t.id, t.title, t.production_year,  mi.info_type_id, t. kind_id, mi.info, SUM(t.kind_id) AS Number_sum
+  dbGetQuery("SELECT t. id, t. production_year, SUM(t. kind_id) AS n_genre
 FROM movie_info mi
-JOIN title t ON mi.movie_id = t.id
+JOIN title t ON mi. movie_id = t. id
 WHERE mi. info_type_id = 3
 AND kind_id = 1
-GROUP BY t.id")
+GROUP BY t. id")
 ```
 
-```{r}
+```{r, message = FALSE, warning = FALSE}
+# Database Querying using SQL to get movies and their genres only in USA
+genre_USA <- db %>%
+  dbGetQuery("SELECT t. production_year, t. id, SUM(t. kind_id) AS n_genre
+FROM title t
+JOIN movie_info mi1 ON t. id = mi1. movie_id
+JOIN movie_info mi2 ON t. id = mi2. movie_id
+WHERE t. kind_id = 1
+AND mi1. info_type_id = 3
+AND mi2. info_type_id = 8 
+AND mi2. info LIKE 'USA'
+GROUP BY t. id;")
+```
+
+```{r, message = FALSE, warning = FALSE}
+# Compute the amount of movies worldwide with 1, 2, 3, 4 and more genres each year 
 sum_movie_2 <- sum_movie %>%
-  select(id, title, production_year, Number_sum) %>%
+  select(id, production_year, n_genre) %>%
   group_by(production_year) %>%
-  summarize(a = sum(Number_sum == 1),
-            b = sum(Number_sum == 2),
-            c = sum(Number_sum >= 3),
-            id = max(id),
-            title = max(title))
+  summarize(genre_1 = sum(n_genre == 1),
+            genre_2 = sum(n_genre == 2),
+            genre_3 = sum(n_genre == 3),
+            genre_4andmore = sum(n_genre >= 4),
+            id = max(id))
 ```
 
-```{r}
-sum_movie_3 <- sum_movie %>%
-  select(id, title, production_year, Number_sum) %>%
-  group_by(production_year) %>%
-  summarize(a = sum(Number_sum == 1),
-            b = sum(Number_sum >= 2),
-            id = max(id),
-            title = max(title))
+```{r, message = FALSE, warning = FALSE}
+# Tidy the data
+sum_movie_3_num <- sum_movie_2 %>%
+  select("production_year", "genre_1", "genre_2", "genre_3", "genre_4andmore") %>%
+gather(key = "Multiplicity", value = "number", -production_year) 
 ```
 
+```{r, message = FALSE, warning = FALSE}
+# Tidy the data
+sum_movie_3_prop <- sum_movie_2 %>%
+  select("production_year", "genre_1", "genre_2", "genre_3", "genre_4andmore") %>%
+gather(key = "Multiplicity", value = "prop", -production_year) 
+```
+
+```{r, message = FALSE, warning = FALSE}
+# Draw the graph for movies worldwide showing genre multiplicity with number of movies
+ggplot(sum_movie_3_num, aes(y = number, x = production_year)) +
+ geom_bar(aes(fill = Multiplicity), stat = "identity", position = "stack") +
+    labs(title = "World Movie Genre Multiplicity by numbers") +
+    theme(title = element_text(family = "Trebuchet MS",
+                             face = "bold",size = 14),
+        axis.text = element_text(family = "Lao Sangam MN", 
+                             size = 12)) +
+    xlim(1920, 2014)
+```
+
+```{r, message = FALSE, warning = FALSE}
+# Draw the graph for movies worldwide showing genre multiplicity with proportion of each multiplicity type
+ggplot(sum_movie_3_prop, aes(y = prop, x = production_year)) +
+ geom_bar(aes(fill = Multiplicity) ,stat = "identity", position = "fill") +
+    labs(title = "World Movie Genre Multiplicity by Proportion") +
+    theme(title = element_text(family = "Trebuchet MS",
+                             face = "bold", size = 14),
+        axis.text = element_text(family = "Lao Sangam MN", 
+                             size = 12)) +
+    xlim(1920, 2014)
+```
+
+```{r, message = FALSE, warning = FALSE}
+# Compute the amount of movies worldwide with 1 or 2 more genres each year
+sum_movie_line <- sum_movie %>%
+  select(id, production_year, n_genre) %>%
+  group_by(production_year) %>%
+  summarize(one = sum(n_genre == 1),
+            two_and_more  = sum(n_genre >= 2),
+            id = max(id))
+```
+
+```{r, message = FALSE, warning = FALSE}
+# Compute the amount of movies in USA with 1 or 2 more genres each year
+USA_movie_line <- genre_USA %>%
+  select(id, production_year, n_genre) %>%
+  group_by(production_year) %>%
+  summarize(one = sum(n_genre == 1),
+            two_and_more  = sum(n_genre >= 2),
+            id = max(id))
+```
+
+```{r, message = FALSE, warning = FALSE}
+# Compute the proportion of movies with 2 or more genres
+sum_movie_line_2 <- sum_movie_line %>%
+  select("production_year", "one", "two_and_more") %>%
+  mutate(prop = two_and_more / (one + two_and_more))
+
+USA_movie_line_2 <- USA_movie_line %>%
+  select("production_year", "one", "two_and_more") %>%
+  mutate(prop = two_and_more / (one + two_and_more))
+```
+
+```{r, message = FALSE, warning = FALSE}
+# Draw the graph of proportion of movies worldwide with 2 or more genres
+ggplot(sum_movie_line_2, aes(y = prop, x = production_year)) +
+ geom_line() +
+  geom_smooth() +
+  labs(title = "World Movies with 2 or More Genres") +
+  theme(title = element_text(family = "Trebuchet MS",
+                             face = "bold", size = 16),
+        axis.text = element_text(family = "Lao Sangam MN", 
+                             size = 12)) +
+   xlim(1920, 2014)
+```
+
+
+**The 1920s:** 
+1920s are known as the roaring twenties for United States. Universally, it is the peaceful and prosperous period after WWI. We can see through this graph that movies with more than one genre remains a high percentage comparing to the later decades before 2000. The prosperity of that particular era has given people the leisure to enjoy movies and provides manufacture interest in producing movie with genre multiplicity. Thus movies become prosperous and more and more movies including different genres take place.
+
+**The 1930s:**
+Following the 1920s, the great depression started in most countries in 1929. Upon entering the age of great depression, movies with only one genre increased again. This is probably caused by the tied balance and limited economic opportunity. However, the decrease in genre multiplicity isn’t as obvious as we imagined. One possible reason is that the Great Depression is actually inspired the golden age of film industry. Films plays a good role in energizing people during the Great Expression. Statistics shows that even in the Great Depression, 60-80 million people went to the movies once a week in United States. The proportion of movies with genre multiplicity remains even during economically depressing era.
+
+**1940-1945:**
+However, WWII came shortly after beginning from 1939 to 1945. The genres of films continue to expand especially between 1940-1945 given that movies are used as tools to transmit important messages about war. Though producing movies at war time can be hard, it was supported by government. For example, “President Franklin Roosevelt commissioned Hollywood to “emotionalize” the conflict and to mobilize public awareness and support.” (Quoted from http://www.encyclopedia.com/arts/culture-magazines/motion-picture-industry-during-world-war-ii) Therefore government support gives positive influence in producing movie with genre complexity.
+
+**1945-1955:**
+Due to World-War II, the film industry increased productivity with generating propaganda, documentaries, educational pictures, and general awareness of wartime need. Because of this, in year 1946, the theatre attendance has a tremendous increase so does the complexity of genres. However, after the World-War II, more and more families have access to TV. As a result, the film industry has less and less attendance in cinemas. By 1950, an estimated 10 million homes owned a television set(quoted from http://historycooperative.org/the-history-of-the-hollywood-movie-industry/ ).To adapt to time, film companies start making movies for TV in attempt to win back the money they lost in movie theaters. 
+
+**1955-1990s:**
+To increase the number of people going to the cinema, lots of film companies decided to lower the ticket price to only 1 dollar. However, the effect was negligible, it not only failed to increase the number of people who choose to go and watch movie but also cause huge financial problems to film companies. In 1960s, with the civil rights movement and transitions in cultural values, the genres of movies are squared in mainly fashions and rock n’roll. With the Vietnam War in full swing, the 1970’s began with an essence of disenchantment and frustration within American culture. We can see a decline in genres’ complexity at this time as more and more movies focusing on violence, sex and other strong thematic content. The act of lowering the ticket price caused a Great Depression in the film industry, making multiple large film studios to go bankrupt, and last for over 25 years. This depression reached its bottom when in 1990 and 1991, a recession in Economics caused the production of film to decrease even more significantly. This era was marked as pure entertainment films as most movies were unorganized and formalize. 
+
+**From 2000:**The turning point started in the 2000s as remarkable advanced technology were bought into view. The film industry brought IMAX and Blu-ray Disc into theater. As Internet developed at such a significance rate, more and more genres are added to movies to make them more interesting to young people. 
+
+```{r, message = FALSE, warning = FALSE}
+# Draw the graph of proportion of USA movies with 2 or more genres
+ggplot(USA_movie_line_2, aes(y = prop, x = production_year)) +
+ geom_line() + 
+  geom_smooth() +
+  labs(title = "USA Movies with 2 or More Genres") +
+  theme(title = element_text(family = "Trebuchet MS",
+                             face = "bold",size = 16),
+        axis.text = element_text(family = "Lao Sangam MN", 
+                             size = 12)) +
+   xlim(1920, 2014)
+```
+
+
+The background we found is mainly related to the history of United States but is also related to the world. Worry about misinterpreting the relation between the background and the trend of the graph, we filtered movies made in the US only. We found these two trends are very similar.
