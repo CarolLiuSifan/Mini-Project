@@ -11,3 +11,13 @@ library(RMySQL)
 library(tidyverse)
 db <- dbConnect_scidb(dbname = "imdb")
 ```
+
+```{r}
+movie_genre <- db %>%
+  dbGetQuery("SELECT  DISTINCT t.id, t.title, t.production_year,  mi.info_type_id, t. kind_id, mi.info
+FROM movie_info mi
+JOIN title t ON mi.movie_id = t.id
+WHERE mi. info_type_id = 3
+AND kind_id = 1")
+```
+
